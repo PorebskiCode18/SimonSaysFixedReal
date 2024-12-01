@@ -14,8 +14,11 @@ export default function App() {
     const [filteredAccel, setFilteredAccel] = useState({ x: 0, y: 0, z: 0 });
     const [score, setScore] = useState(0);
     const [highScore, setHighScore] = useState<number>(0);
+    const [AllTimehighStreak, setAllTimeHighStreak] = useState<number>(0);
+    const [CurrenthighStreak, setCurrentHighStreak] = useState<number>(0);
     const [timer, setTimer] = useState<number>(30);
     const [isGameActive, setIsGameActive] = useState(false);
+    const [inLobby, setInLobby] = useState<boolean>(true);
     const [multiplier, setMultiplier] = useState<number>(1);
     const [streak, setStreak] = useState(0);
     const [bonusWords, setBonusWords] = useState<string>('');
@@ -42,6 +45,7 @@ export default function App() {
             return () => clearInterval(interval);
         } else if (timer === 0) {
             if (score > highScore) setHighScore(score);
+            if (CurrenthighStreak > AllTimehighStreak) setAllTimeHighStreak(CurrenthighStreak)
             setBonusWords('')
             setMultiplier(1)
             setIsGameActive(false);
@@ -91,11 +95,12 @@ export default function App() {
             advanceBonusQueue();
             setStreak((prevStreak) => {
                 const newStreak = prevStreak + 1;
-
+                if (newStreak > CurrenthighStreak) setCurrentHighStreak(streak);
                 // Generate bonus if streak reaches 5 and no current streak below 5
                 // @ts-ignore
                 if (newStreak >= 5 && turnsCurrent==null && Math.random()<.5) {
                     generateBonus();
+                    setBonusWords('')
                 }
 
                 return newStreak;
@@ -122,7 +127,7 @@ export default function App() {
                 setTurnsCurrent(turns);
                 if (turns==1){
                     if (Math.random()<.01){
-                        const num = Math.floor(Math.random()*5)+1;
+                        const num = Math.floor(Math.random()*3)+1;
                         setBonusWords(`Score x${num}`);
                         setMultiplier(num)
                         setTurnsCurrent(null)
@@ -164,7 +169,7 @@ export default function App() {
 
         if (isTrick) {
             // Trick text logic: hold still for 2 seconds
-            if (Math.abs(x) > threshold || Math.abs(z) > threshold) {
+            if (Math.abs(x) > threshold/2 || Math.abs(z) > threshold/2) {
                 handleNextDirection('Incorrect'); // Incorrect if tilted
                 setHoldStartTime(null); // Reset hold timer
             } else if (!holdStartTime) {
@@ -230,12 +235,17 @@ export default function App() {
         setIsGameActive(true);
         setScore(0);
         setStreak(0);
+        setCurrentHighStreak(0)
         setTimer(30);
         setTurnsCurrent(null);
         setBonusQueue([]);
         setBonusDisplay(['⬤', '⬤', '⬤', '⬤', '⬤']);
         generateNewDirection();
+        setInLobby(false);
     };
+    const returnLobby = () =>{
+        setInLobby(true);
+    }
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
@@ -259,25 +269,54 @@ export default function App() {
                     </Text>
                 </View>
             )}
-            <View style={styles.timeContainer}>
-                <Text style={styles.timer}>Time: {timer}s</Text>
-            </View>
-            <View style={styles.timerScoreContainer}>
-                <Text style={styles.score}>Score: {score}</Text>
-                <Text style={styles.streak}>Streak: {streak}</Text>
-            </View>
-
+            {!inLobby && (
+                <View style={styles.timeContainer}>
+                    <Text style={styles.timer}>Time: {timer}s</Text>
+                </View>
+            )}
+            {!inLobby && (
+                <View style={styles.timerScoreContainer}>
+                    <Text style={styles.score}>Score: {score}</Text>
+                    <Text style={styles.streak}>Streak: {streak}</Text>
+                </View>
+            )}
             <Text style={styles.bonusText}>{bonusWords}</Text>
 
-            {!isGameActive && timer === 0 && (
-                <Text style={styles.feedback}>
-                    Game Over! High Score: {highScore}
-                </Text>
+            {!inLobby && !isGameActive && timer === 0 && (
+                <View>
+                    <Text style={styles.feedback}>
+                        Game Over!
+                    </Text>
+                    <Text style={styles.feedback}>
+                        Score: {score}
+                    </Text>
+                    <Text style={styles.feedback}>
+                        Highest Streak: {CurrenthighStreak}
+                    </Text>
+                    <TouchableOpacity onPress={returnLobby} style={styles.startButton}>
+                        <Text style={styles.startButtonText}>Return to Lobby</Text>
+                    </TouchableOpacity>
+                </View>
             )}
-            {!isGameActive && (
-                <TouchableOpacity onPress={startGame} style={styles.startButton}>
-                    <Text style={styles.startButtonText}>Start</Text>
-                </TouchableOpacity>
+            {inLobby && !isGameActive && (
+                <View>
+                    <TouchableOpacity onPress={startGame} style={styles.startButton}>
+                        <Text style={styles.startButtonText}>Start Game</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+            {inLobby && !isGameActive && (
+                <View>
+                    <Text style={styles.feedback}>
+                        High Score: {highScore}
+                    </Text>
+                    <Text style={styles.feedback}>
+                        Highest Streak: {AllTimehighStreak}
+                    </Text>
+                    <Text style={styles.feedback}>
+                        Last Streak: {CurrenthighStreak}
+                    </Text>
+                </View>
             )}
         </View>
     );
@@ -344,11 +383,13 @@ const styles = StyleSheet.create({
         paddingVertical: 15,
         paddingHorizontal: 30,
         borderRadius: 10,
+        textAlign: 'center',
     },
     startButtonText: {
         color: 'white',
         fontSize: 18,
         fontWeight: 'bold',
+        alignItems: 'center',
     },
     bonusText: {
         color: 'golden',
