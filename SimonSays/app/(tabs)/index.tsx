@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity,TextInput, Alert,} from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import { Vibration } from 'react-native';
-import {doc , collection, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import {doc , collection, query, where, getDocs, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
@@ -62,6 +62,52 @@ export default function App() {
             setIsGameActive(false);
         }
     }, [isGameActive, timer]);
+
+    const handleDeleteUser = async () => {
+        try {
+            // Show confirmation prompt
+            Alert.alert(
+                'Delete Account',
+                `Are you sure you want to delete the account of ${loggedInName}?`,
+                [
+                    {
+                        text: 'Cancel',
+                        style: 'cancel',
+                    },
+                    {
+                        text: 'Delete',
+                        onPress: async () => {
+                            try {
+                                // Fetch user ID (ensure it resolves before proceeding)
+                                const userId = await getUserIdByUsername(loggedInName);
+                                if (!userId) {
+                                    throw new Error('User ID not found.');
+                                }
+
+                                // Delete the user's document from Firestore
+                                const userDocRef = doc(db, 'users', userId);
+                                await deleteDoc(userDocRef);
+
+                                // After successful deletion, update the state
+                                setLoggedIn(false);
+                                setLoggedInName('');
+
+                                Alert.alert('Account Deleted', `User ${loggedInName} has been deleted.`);
+                            } catch (deleteError) {
+                                console.error('Error deleting user:', deleteError);
+                                Alert.alert('Error', 'There was an issue deleting the user.');
+                            }
+                        },
+                    },
+                ],
+            );
+        } catch (error) {
+            console.error('Error during deletion process:', error);
+            Alert.alert('Error', 'There was an issue processing the deletion.');
+        }
+    };
+
+
 
     const getUserIdByUsername = async (username: unknown) => {
         try {
@@ -172,8 +218,8 @@ export default function App() {
             await addDoc(collection(db, "users"), {
                 Highscore: 0,
                 Highstreak: 0,
-                Password: signupUsername,
-                Username: signupPassword,
+                Password: signupPassword,
+                Username: signupUsername,
             });
             setLoggedInName(signupUsername);
             setHighScore(0);
@@ -441,6 +487,10 @@ export default function App() {
                             <Text style={styles.loggedInText}>Hello, {loggedInName}</Text>
                             <TouchableOpacity onPress={logOut} style={styles.logoutButton}>
                                 <Text style={styles.startButtonText}>Log Out</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity onPress={handleDeleteUser} style={styles.logoutButton}>
+                                <Text style={styles.startButtonText}>DELETE USER</Text>
                             </TouchableOpacity>
 
 
