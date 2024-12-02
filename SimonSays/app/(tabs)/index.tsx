@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity,TextInput, Alert,} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity,TextInput, Alert,FlatList,} from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import { Vibration } from 'react-native';
-import {doc , collection, query, where, getDocs, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "./firebaseConfig";
+import {doc , collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, orderBy, onSnapshot } from "firebase/firestore";
+import { db, } from "./firebaseConfig";
+
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 
@@ -48,6 +49,42 @@ export default function App() {
         LEFT: '⬅️',
         RIGHT: '➡️',
     };
+
+    interface LeaderboardEntry {
+        Username: string;
+        Highscore: number;
+    }
+    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+    useEffect(() => {
+        console.log("Setting up Firestore listener for leaderboard...");
+        const leaderboardQuery = query(
+            collection(db, 'users'), // Collection name is 'users'
+            orderBy('Highscore', 'desc') // Order by Highscore in descending order
+        );
+
+        // Real-time listener for Firestore collection
+        const unsubscribe = onSnapshot(leaderboardQuery, (querySnapshot) => {
+            const leaderboardData: LeaderboardEntry[] = querySnapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    Username: data.Username as string,
+                    Highscore: data.Highscore as number,
+                };
+            });
+
+            // Ensure manual sorting as a fallback
+            setLeaderboard(
+                leaderboardData.sort((a, b) => b.Highscore - a.Highscore)
+            );
+        });
+
+        // Cleanup listener on component unmount
+        return () => unsubscribe();
+    }, []);
+
+
+
 
     useEffect(() => {
         if (isGameActive && timer > 0) {
@@ -149,9 +186,6 @@ export default function App() {
                 Highscore: newHighscore,
                 Highstreak: newHighstreak,
             });
-
-            console.log("User stats updated successfully!");
-            alert("User stats updated!");
         } catch (error: any) {
             console.error("Error updating user stats:", error.message || error);
             alert(`Error updating user stats. ${error.message || "Please try again."}`);
@@ -304,7 +338,7 @@ export default function App() {
                 setTurnsCurrent(turns);
                 if (turns==1){
                     if (Math.random()<.5){
-                        const num = Math.floor(Math.random()*3)+1;
+                        const num = Math.floor(Math.random()*3)+2;
                         setBonusWords(`Score x${num}`);
                         setMultiplier(num)
                         setTurnsCurrent(null)
@@ -492,6 +526,17 @@ export default function App() {
                             <TouchableOpacity onPress={handleDeleteUser} style={styles.logoutButton}>
                                 <Text style={styles.startButtonText}>DELETE USER</Text>
                             </TouchableOpacity>
+
+                            {/* Leaderboard */}
+                            <View style={{backgroundColor:'lightgray'}}>
+                                <Text style={styles.subtitle}>Leaderboard</Text>
+
+                                {leaderboard.map((entry, index) => (
+                                    <Text key={index} style={styles.leaderboardEntry}>
+                                        {index + 1}) {entry.Username}: {entry.Highscore}
+                                    </Text>
+                                ))}
+                            </View>
 
 
                             <View style={styles.centerContainer}>
@@ -706,5 +751,31 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    leaderboardContainer: {
+        marginVertical: 5,
+        padding: 5,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+    },
+    leaderboardTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        marginBottom: 3,
+    },
+    leaderboardItem: {
+        fontSize: 18,
+        marginVertical: 3,
+    },
+    subtitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 10,
+    },
+    leaderboardEntry: {
+        fontSize: 16,
+        marginVertical: 5,
+        backgroundColor: 'gray',
     },
 });
