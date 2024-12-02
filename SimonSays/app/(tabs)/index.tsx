@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity,TextInput, Alert,} from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import { Vibration } from 'react-native';
+import {doc , collection, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
 
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+
 
 const directions: Direction[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
 
@@ -22,12 +25,19 @@ export default function App() {
     const [multiplier, setMultiplier] = useState<number>(1);
     const [streak, setStreak] = useState(0);
     const [bonusWords, setBonusWords] = useState<string>('');
-
+    const [loggedIn, setLoggedIn] = useState<boolean>(false);
     const [isTrick, setIsTrick] = useState<boolean>(false);
     const [holdStartTime, setHoldStartTime] = useState<number | null>(null);
     const [turnsCurrent,setTurnsCurrent] = useState<number | null>(null);
     const [bonusQueue, setBonusQueue] = useState<number[]>([]); // Turns remaining for bonuses
     const [bonusDisplay, setBonusDisplay] = useState<string[]>(['⬤', '⬤', '⬤', '⬤', '⬤']); // Bonus indicator
+
+    const [loginUsername, setLoginUsername] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [signupUsername, setSignupUsername] = useState('');
+    const [signupPassword, setSignupPassword] = useState('');
+
+    const [loggedInName, setLoggedInName] = useState<string>('');
 
     let lastDetectionTime = 0;
     const alpha = 0.8;
@@ -46,11 +56,64 @@ export default function App() {
         } else if (timer === 0) {
             if (score > highScore) setHighScore(score);
             if (CurrenthighStreak > AllTimehighStreak) setAllTimeHighStreak(CurrenthighStreak)
+            updateUserStats(getUserIdByUsername(loggedInName),highScore,AllTimehighStreak)
             setBonusWords('')
             setMultiplier(1)
             setIsGameActive(false);
         }
     }, [isGameActive, timer]);
+
+    const getUserIdByUsername = async (username: unknown) => {
+        try {
+            const usersCollection = collection(db, "users");
+            const q = query(usersCollection, where("Username", "==", username));
+            const querySnapshot = await getDocs(q);
+
+            if (!querySnapshot.empty) {
+                const userDoc = querySnapshot.docs[0]; // Get the first matching user document
+                return userDoc.id; // Return the document ID
+            } else {
+                console.error("No user found with the given username.");
+                return null;
+            }
+        } catch (error) {
+            console.error("Error fetching user ID:", error);
+            return null;
+        }
+    };
+
+
+    const updateUserStats = async (
+        userId: string | Promise<string | null>,
+        newHighscore: number,
+        newHighstreak: number
+    ): Promise<void> => {
+        try {
+            // Resolve userId if it's a Promise
+            const resolvedUserId = await userId;
+            if (!resolvedUserId) {
+                throw new Error("User ID is null or undefined.");
+            }
+
+            // Reference the user's document in Firestore
+            const userDocRef = doc(db, "users", resolvedUserId); // Ensure 'db' is your Firestore instance
+
+            // Update the fields
+            await updateDoc(userDocRef, {
+                Highscore: newHighscore,
+                Highstreak: newHighstreak,
+            });
+
+            console.log("User stats updated successfully!");
+            alert("User stats updated!");
+        } catch (error: any) {
+            console.error("Error updating user stats:", error.message || error);
+            alert(`Error updating user stats. ${error.message || "Please try again."}`);
+        }
+    };
+
+
+
 
     useEffect(() => {
         if (isGameActive) {
@@ -61,6 +124,74 @@ export default function App() {
         }
         return () => unsubscribeFromAccelerometer();
     }, [isGameActive]);
+
+    const handleLogin = async () => {
+        try {
+            // Define the Firestore query
+            const usersCollectionRef = collection(db, "users");
+            const loginQuery = query(
+                usersCollectionRef,
+                where("Username", "==", loginUsername),
+                where("Password", "==", loginPassword)
+            );
+
+            // Execute the query
+            const querySnapshot = await getDocs(loginQuery);
+
+            // Handle the results
+            if (querySnapshot.empty) {
+                Alert.alert("Login Failed", "Invalid username or password");
+            } else {
+                // Access the first document in the query results
+                const userDoc = querySnapshot.docs[0]; // Get the first document
+                const userData = userDoc.data(); // Extract the data from the document
+                const username = userData.Username; // Access the username field
+                const userHighscore = userData.Highscore; // Access the highscore field
+                const userHighstreak = userData.Highstreak; // Access the highstreak field
+
+                // Update state with user information
+                setLoggedInName(username);
+                setHighScore(userHighscore);
+                setAllTimeHighStreak(userHighstreak);
+
+                // Reset login form fields
+                setLoginUsername("");
+                setLoginPassword("");
+
+                // Mark the user as logged in
+                setLoggedIn(true);
+            }
+        } catch (error) {
+            Alert.alert("Error", "An error occurred while logging in");
+            console.error(error);
+        }
+    };
+
+    const handleSignup = async () => {
+        try {
+            await addDoc(collection(db, "users"), {
+                Highscore: 0,
+                Highstreak: 0,
+                Password: signupUsername,
+                Username: signupPassword,
+            });
+            setLoggedInName(signupUsername);
+            setHighScore(0);
+            setCurrentHighStreak(0);
+            setAllTimeHighStreak(0);
+            alert("Participant added!");
+            setSignupUsername("");
+            setSignupPassword('');
+            setLoggedIn(true);
+        } catch (error) {
+            Alert.alert('Error', 'An error occurred while creating your account');
+            console.error(error);
+        }
+    };
+
+
+
+
 
     const subscribeToAccelerometer = () => {
         setSubscription(
@@ -126,7 +257,7 @@ export default function App() {
                 if (turns <= 5) updatedDisplay[5 - turns] = '🎁';
                 setTurnsCurrent(turns);
                 if (turns==1){
-                    if (Math.random()<.01){
+                    if (Math.random()<.5){
                         const num = Math.floor(Math.random()*3)+1;
                         setBonusWords(`Score x${num}`);
                         setMultiplier(num)
@@ -246,76 +377,137 @@ export default function App() {
     const returnLobby = () =>{
         setInLobby(true);
     }
+    const logOut= () =>{
+        setLoggedInName('')
+        setLoggedIn(false);
+    }
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <Text style={styles.feedback}>{feedback}</Text>
-            {isGameActive && (
-                <View style={styles.bonusContainer}>
-                    {bonusDisplay.map((symbol, index) => (
-                        <Text key={index} style={styles.bonusSymbol}>
-                            {symbol}
-                        </Text>
-                    ))}
-                </View>
-            )}
-            {isGameActive && timer > 0 && currentDirection && (
-                <View style={styles.directionContainer}>
-                    <Text style={styles.directionEmoji}>
-                        {directionEmojis[currentDirection]}
-                    </Text>
-                    <Text style={styles.directionText}>
-                        {isTrick ? `Tilt ${currentDirection}` : `Simon says: tilt ${currentDirection}`}
-                    </Text>
-                </View>
-            )}
-            {!inLobby && (
-                <View style={styles.timeContainer}>
-                    <Text style={styles.timer}>Time: {timer}s</Text>
-                </View>
-            )}
-            {!inLobby && (
-                <View style={styles.timerScoreContainer}>
-                    <Text style={styles.score}>Score: {score}</Text>
-                    <Text style={styles.streak}>Streak: {streak}</Text>
-                </View>
-            )}
-            <Text style={styles.bonusText}>{bonusWords}</Text>
+            {loggedIn && (
+                <View style={styles.container}>
+                    <Text style={styles.feedback}>{feedback}</Text>
+                    {isGameActive && (
+                        <View style={styles.bonusContainer}>
+                            {bonusDisplay.map((symbol, index) => (
+                                <Text key={index} style={styles.bonusSymbol}>
+                                    {symbol}
+                                </Text>
+                            ))}
+                        </View>
+                    )}
+                    {isGameActive && timer > 0 && currentDirection && (
+                        <View style={styles.directionContainer}>
+                            <Text style={styles.directionEmoji}>
+                                {directionEmojis[currentDirection]}
+                            </Text>
+                            <Text style={styles.directionText}>
+                                {isTrick ? `Tilt ${currentDirection}` : `Simon says: tilt ${currentDirection}`}
+                            </Text>
+                        </View>
+                    )}
+                    {!inLobby && (
+                        <View style={styles.timeContainer}>
+                            <Text style={styles.timer}>Time: {timer}s</Text>
+                        </View>
+                    )}
+                    {!inLobby && (
+                        <View style={styles.timerScoreContainer}>
+                            <Text style={styles.score}>Score: {score}</Text>
+                            <Text style={styles.streak}>Streak: {streak}</Text>
+                        </View>
+                    )}
+                    <Text style={styles.bonusText}>{bonusWords}</Text>
 
-            {!inLobby && !isGameActive && timer === 0 && (
-                <View>
-                    <Text style={styles.feedback}>
-                        Game Over!
-                    </Text>
-                    <Text style={styles.feedback}>
-                        Score: {score}
-                    </Text>
-                    <Text style={styles.feedback}>
-                        Highest Streak: {CurrenthighStreak}
-                    </Text>
-                    <TouchableOpacity onPress={returnLobby} style={styles.startButton}>
-                        <Text style={styles.startButtonText}>Return to Lobby</Text>
-                    </TouchableOpacity>
+                    {!inLobby && !isGameActive && timer === 0 && (
+                        <View>
+                            <Text style={styles.feedback}>
+                                Game Over!
+                            </Text>
+                            <Text style={styles.feedback}>
+                                Score: {score}
+                            </Text>
+                            <Text style={styles.feedback}>
+                                Highest Streak: {CurrenthighStreak}
+                            </Text>
+                            <TouchableOpacity onPress={returnLobby} style={styles.startButton}>
+                                <Text style={styles.startButtonText}>Return to Lobby</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                    {inLobby && !isGameActive && (
+                        <View style={{ flex: 2, width: '100%' }}>
+
+                            <Text style={styles.loggedInText}>Hello, {loggedInName}</Text>
+                            <TouchableOpacity onPress={logOut} style={styles.logoutButton}>
+                                <Text style={styles.startButtonText}>Log Out</Text>
+                            </TouchableOpacity>
+
+
+                            <View style={styles.centerContainer}>
+                                <TouchableOpacity onPress={startGame} style={styles.startButton}>
+                                    <Text style={styles.startButtonText}>Start Game</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
+                    {inLobby && !isGameActive && (
+                        <View>
+                            <Text style={styles.feedback}>
+                                High Score: {highScore}
+                            </Text>
+                            <Text style={styles.feedback}>
+                                Highest Streak: {AllTimehighStreak}
+                            </Text>
+                            <Text style={styles.feedback}>
+                                Last Streak: {CurrenthighStreak}
+                            </Text>
+                        </View>
+                    )}
                 </View>
             )}
-            {inLobby && !isGameActive && (
-                <View>
-                    <TouchableOpacity onPress={startGame} style={styles.startButton}>
-                        <Text style={styles.startButtonText}>Start Game</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-            {inLobby && !isGameActive && (
-                <View>
-                    <Text style={styles.feedback}>
-                        High Score: {highScore}
-                    </Text>
-                    <Text style={styles.feedback}>
-                        Highest Streak: {AllTimehighStreak}
-                    </Text>
-                    <Text style={styles.feedback}>
-                        Last Streak: {CurrenthighStreak}
-                    </Text>
+            {!loggedIn && (
+                <View style={styles.container}>
+                    {/* Login Section */}
+                    <View style={styles.loginSection}>
+                        <Text style={styles.sectionTitle}>Login</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Username"
+                            value={loginUsername}
+                            onChangeText={setLoginUsername}
+                        />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Password"
+                            secureTextEntry
+                            value={loginPassword}
+                            onChangeText={setLoginPassword}
+                        />
+                        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+                            <Text style={styles.buttonText}>Login</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Signup Section */}
+                    <View style={styles.signupSection}>
+                        <Text style={styles.sectionTitle}>Create Account</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Username"
+                            value={signupUsername}
+                            onChangeText={(text) => setSignupUsername(text)} // Use onChangeText for direct value updates
+                        />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Password"
+                            value={signupPassword}
+                            onChangeText={(text) => setSignupPassword(text)}
+                        />
+                        <TouchableOpacity style={styles.button} onPress={handleSignup}>
+                            <Text style={styles.buttonText}>Sign Up</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
         </View>
@@ -328,6 +520,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
+        position: 'relative', // Added to enable absolute positioning for children
     },
     feedback: {
         fontSize: 24,
@@ -396,5 +589,72 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         verticalAlign: 'bottom',
+    },
+    loginSection: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    signupSection: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    sectionTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    input: {
+        height: 50,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        paddingHorizontal: 15,
+        fontSize: 16,
+        marginBottom: 15,
+        borderWidth: 1,
+        borderColor: '#ccc',
+    },
+    button: {
+        backgroundColor: '#007BFF',
+        paddingVertical: 15,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    buttonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    headerContainer: {
+        flexDirection: 'row',             // Align elements horizontally (row)
+        justifyContent: 'space-between',  // Space out the elements (left and right)
+        alignItems: 'center',             // Vertically center items within their container
+        width: '100%',                    // Ensure the container spans full width
+        height: 60,                       // Set a fixed height for the header (adjust as needed)
+        position: 'absolute',             // Keep the header fixed at the top of the screen
+        top: 20,                          // Distance from the top of the screen (adjustable)
+        paddingLeft: 20,                  // Padding on the left side
+        paddingRight: 20,                 // Padding on the right side
+        backgroundColor: 'transparent',   // Transparent background
+    },
+
+    loggedInText: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginLeft: 0,                    // No extra margin on the left side
+    },
+
+    logoutButton: {
+        backgroundColor: '#007BFF',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+    },
+
+
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
